@@ -1,0 +1,378 @@
+#define _GNU_SOURCE
+#define _POSIX_C_SOURCE 200809L
+#include <stdarg.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include <time.h>
+#include <math.h>
+#include <complex.h>
+#include <fftw3.h>
+
+struct picture
+{
+	size_t width, height;
+	uint8_t (*pixels)[3];
+};
+
+struct picture new_picture(size_t width, size_t height)
+{
+	struct picture pic;
+	pic.width = width;
+	pic.height = height;
+	pic.pixels = calloc(pic.width * pic.height, sizeof(*pic.pixels));
+	return pic;
+}
+
+void free_picture(struct picture pic)
+{
+	free(pic.pixels);
+}
+
+/* Read a PPM file in P6 format (binary, RGB)
+ * File format:
+ * - header: "P6\n"
+ * - comment: "<any newline-terminated comment>\n"
+ * - size: "<width> <height>\n", where width and height are decimal numbers
+ * - depth: "<max>\n", max is a decimal number representing what corresponds to full intensity
+ * - data: for every pixel, 3 bytes containing a number from 0 to max, corresponding to the value of the
+ *   red, green, and blue channels, respectively
+ */
+struct picture read_picture(char const *filename)
+{
+	FILE *f = fopen(filename, "rb");
+	if(!f)
+		perror("fopen"), abort();
+	char *header = NULL;
+	size_t header_sz = 0;
+	if(-1 == getline(&header, &header_sz, f))
+		perror("getline/0"), abort();
+	if(!header || strcmp(header, "P6\n"))
+		fprintf(stderr, "Invalid PPM header: %s\n", header), abort();
+	if(-1 == getline(&header, &header_sz, f))
+		perror("getline/1"), abort();
+	if(-1 == getline(&header, &header_sz, f))
+		perror("getline/2"), abort();
+	unsigned w, h;
+	if(2 != sscanf(header, "%u %u\n", &w, &h))
+		fprintf(stderr, "Invalid PPM size: %s\n", header), abort();
+	if(-1 == getline(&header, &header_sz, f))
+		perror("getline/3"), abort();
+	unsigned max;
+	if(1 != sscanf(header, "%u\n", &max))
+		fprintf(stderr, "Invalid PPM depth: %s\n", header), abort();
+	free(header);
+	struct picture pic = new_picture(w, h);
+	size_t read = 0;
+	while(read < pic.width * pic.height)
+	{
+		if(feof(f))
+			fprintf(stderr, "PPM file truncated\n"), abort();
+		read += fread(pic.pixels + read, sizeof(*pic.pixels), pic.width * pic.height - read, f);
+		if(ferror(f))
+			perror("fread"), abort();
+	}
+	fclose(f);
+	for(size_t i = 0; i < pic.width * pic.height; i++)
+	{
+		pic.pixels[i][0] = (pic.pixels[i][0] * 255) / max;
+		pic.pixels[i][1] = (pic.pixels[i][1] * 255) / max;
+		pic.pixels[i][2] = (pic.pixels[i][2] * 255) / max;
+	}
+	return pic;
+}
+
+void write_picture(char const *filename, struct picture pic)
+{
+	FILE *f = fopen(filename, "wb");
+	if(!f)
+		perror("fopen"), abort();
+	if(0 > fprintf(f, "P6\n#\n%u %u\n%u\n", (unsigned)pic.width, (unsigned)pic.height, (unsigned)255))
+		perror("fprintf"), abort();
+	size_t wrote = 0;
+	while(wrote < pic.width * pic.height)
+	{
+		wrote += fwrite(pic.pixels + wrote, sizeof(*pic.pixels), pic.width * pic.height - wrote, f);
+		if(ferror(f))
+			perror("fwrite"), abort();
+	}
+	fclose(f);
+}
+
+double clamp(double min, double max, double x)
+{
+	if(x < min)
+		return min;
+	if(x > max)
+		return max;
+	return x;
+}
+
+/* map squared magnitude to brightness */
+void complex_to_gray(complex double z, uint8_t pix[3])
+{
+	pix[2] = pix[1] = pix[0] = 0xFF * clamp(0.0, 1.0, cabs(z) * cabs(z));
+}
+
+/* map phase to hue and magnitude to brightness */
+void complex_to_rgb(complex double z, uint8_t pix[3])
+{
+	double arg = carg(z) * 3.0 / M_PI; /* [-3, 3] */
+	double mag = clamp(0.0, 1.0, cabs(z));
+	if(arg < -2.0) /* cyan - blue */
+	{
+		pix[0] = 0;
+		pix[1] = 0xFF * mag * (-2.0 - arg);
+		pix[2] = 0xFF * mag;
+	}
+	else if(arg < -1.0) /* blue - magenta */
+	{
+		pix[0] = 0xFF * mag * (arg + 2.0);
+		pix[1] = 0;
+		pix[2] = 0xFF * mag;
+	}
+	else if(arg < 0.0) /* magenta - red */
+	{
+		pix[0] = 0xFF * mag;
+		pix[1] = 0;
+		pix[2] = 0xFF * mag * -arg;
+	}
+	else if(arg < 1.0) /* red - yellow */
+	{
+		pix[0] = 0xFF * mag;
+		pix[1] = 0xFF * mag * arg;
+		pix[2] = 0;
+	}
+	else if(arg < 2.0) /* yellow - green */
+	{
+		pix[0] = 0xFF * mag * (2.0 - arg);
+		pix[1] = 0xFF * mag;
+		pix[2] = 0;
+	}
+	else /* green - cyan */
+	{
+		pix[0] = 0;
+		pix[1] = 0xFF * mag;
+		pix[2] = 0xFF * mag * (arg - 2.0);
+	}
+}
+
+/* map hue to phase, brightness to magnitude */
+void rgb_to_complex(uint8_t pix[3], complex double *z)
+{
+	int value = 0;
+	int min = 0xFF;
+	if(pix[0] > value) value = pix[0];
+	if(pix[1] > value) value = pix[1];
+	if(pix[2] > value) value = pix[2];
+	if(pix[0] < min) min = pix[0];
+	if(pix[1] < min) min = pix[1];
+	if(pix[2] < min) min = pix[2];
+	double chroma = value - min;
+	double hue = 0;
+	if(value > min)
+	{
+		if(value == pix[0]) /* magenta - yellow */
+			hue = (pix[1] - pix[2]) / chroma;
+		else if(value == pix[1]) /* yellow - cyan */
+			hue = 2.0 + (pix[2] - pix[0]) / chroma;
+		else
+			hue = 4.0 + (pix[0] - pix[1]) / chroma;
+	}
+	*z = (value / 255.0) * cexp(I * (hue * M_PI / 3.0));
+}
+
+/* Record and report timing information */
+struct timespec timing;
+void timing_start(char const *fmt, ...)
+{
+	va_list args;
+	va_start(args, fmt);
+	vfprintf(stderr, fmt, args);
+	va_end(args);
+	fprintf(stderr, ": ");
+	fflush(stderr);
+	if(clock_gettime(CLOCK_MONOTONIC, &timing))
+		perror("clock_gettime"), abort();
+}
+
+void timing_end()
+{
+	struct timespec end;
+	if(clock_gettime(CLOCK_MONOTONIC, &end))
+		perror("clock_gettime"), abort();
+
+	long unsigned seconds = end.tv_sec - timing.tv_sec - (end.tv_sec < timing.tv_sec);
+	long unsigned nanoseconds = (end.tv_nsec - timing.tv_sec + 1000000000) % 1000000000;
+	printf("%02lu:%02lu.%09lu\n", seconds / 60, seconds % 60, nanoseconds);
+}
+
+int main(int argc, char *argv[])
+{
+	/* libfftw3 first requires you to create a "plan" for a fixed size array, so that it can do some precomputation
+	 * required to to Fourier transforms on that size of array. With this in mind, we try to avoid re-creating plans
+	 * if the input array size has not changed */
+	complex double *ainput = NULL, *akernel = NULL, *aoutput = NULL;
+	complex double *ainput_spec = NULL, *akernel_spec = NULL, *aoutput_spec = NULL;
+	fftw_plan input_plan = NULL, kernel_plan = NULL, output_plan = NULL;
+
+	char *infile = NULL, *outfile = NULL, *flags = NULL;
+	double lambda, distance;
+	int w = 0, h = 0; /* last width, height */
+	
+	while(0 < scanf("%ms%ms%lf%lf%m[^\n]", &infile, &outfile, &lambda, &distance, &flags))
+	{
+		int measure = flags && strchr(flags, 'm');
+		int patient = flags && strchr(flags, 'p');
+		int intensity = flags && strchr(flags, 'i');
+		int split = flags && strchr(flags, 's');
+		int tilex = flags && strchr(flags, 'x');
+		int tiley = flags && strchr(flags, 'y');
+		int normalize = flags && strchr(flags, 'n');
+
+		timing_start("Load picture");
+		struct picture pic = read_picture(infile);
+		timing_end();
+		if(pic.width != w || pic.height != h)
+		{
+			fftw_destroy_plan(input_plan);
+			fftw_destroy_plan(kernel_plan);
+			fftw_destroy_plan(output_plan);
+		
+			w = pic.width;
+			h = pic.height;
+
+			ainput = realloc(ainput, 2 * w * 2 * h * sizeof(*ainput));
+			akernel = realloc(akernel, 2 * w * 2 * h * sizeof(*akernel));
+			aoutput = realloc(aoutput, 2 * w * 2 * h * sizeof(*aoutput));
+			ainput_spec = realloc(ainput_spec, 2 * w * 2 * h * sizeof(*ainput_spec));
+			akernel_spec = realloc(akernel_spec, 2 * w * 2 * h * sizeof(*akernel_spec));
+			aoutput_spec = realloc(aoutput_spec, 2 * w * 2 * h * sizeof(*aoutput_spec));
+	
+			timing_start("Create %dx%d FFT plans", 2 * h, 2 * w);
+			int flags = FFTW_DESTROY_INPUT;
+			if(patient)
+				flags |= FFTW_PATIENT;
+			else if(measure)
+				flags |= FFTW_MEASURE;
+			else
+				flags |= FFTW_ESTIMATE;
+			input_plan = fftw_plan_dft_2d(2 * h, 2 * w, ainput, ainput_spec, FFTW_FORWARD, flags);
+			kernel_plan = fftw_plan_dft_2d(2 * h, 2 * w, akernel, akernel_spec, FFTW_FORWARD, flags);
+			output_plan = fftw_plan_dft_2d(2 * h, 2 * w, aoutput_spec, aoutput, FFTW_BACKWARD, flags);
+			timing_end();
+		}
+
+		/* 2D arrays aliasing the data, for convenient index manipulation */
+		complex double (*input)[2 * w] = (complex double (*)[2 * w])ainput;
+		complex double (*kernel)[2 * w] = (complex double (*)[2 * w])akernel;
+		complex double (*output)[2 * w] = (complex double (*)[2 * w])aoutput;
+		complex double (*input_spec)[2 * w] = (complex double (*)[2 * w])ainput_spec;
+		complex double (*kernel_spec)[2 * w] = (complex double (*)[2 * w])akernel_spec;
+		complex double (*output_spec)[2 * w] = (complex double (*)[2 * w])aoutput_spec;
+		uint8_t (*pixels)[w][3] = (uint8_t (*)[w][3])pic.pixels;
+
+		timing_start("Load input");
+		/* Discrete Fourier transforms are band-limited: they compute the spectrum of a periodic repetiton of the input
+		 * array. To make a non-periodic convolution we pad the input array with zeroes, so that in the output there is
+		 * a region that excludes any contributions from the "adjacent copies" of the input array.
+		 *
+		 * In periodic mode we could have used an unpadded array, but for simplicity (fixed size arrays), we just repeat
+		 * the input array twice, which restores contributions from "adjacent copies" in the output.
+		 */
+		memset(input, 0, 2 * w * 2 * h * sizeof(**input));
+		for(int y = 0; y < (tiley ? 2 * h : h); y++)
+			for(int x = 0; x < (tilex ? 2 * w : w); x++)
+				rgb_to_complex(pixels[y % h][x % w], &input[y][x]);
+		timing_end();
+		free_picture(pic);
+
+		timing_start("Fourier transform input");
+		fftw_execute(input_plan);
+		timing_end();
+		
+		timing_start("Load kernel");
+		for(int y = -h; y < h; y++)
+			for(int x = -w; x < w; x++)
+			{
+				/* Fresnel-Kirchoff diffraction kernel */
+				double R = hypot(x, y);
+				double r = hypot(R, distance);
+				double phase = 2 * M_PI * (r - distance) / lambda;
+				kernel[y + h][x + w] = -I / lambda * (1 + I * lambda / (2 * M_PI * r)) * distance / (r * r) * cexp(I * phase);
+			}
+		timing_end();
+
+		timing_start("Fourier transform kernel");
+		fftw_execute(kernel_plan);
+		timing_end();
+
+		timing_start("Convolution in frequency space");
+		for(int y = 0; y < 2 * h; y++)
+			for(int x = 0; x < 2 * w; x++)
+				output_spec[y][x] = input_spec[y][x] * kernel_spec[y][x] / (2 * w * 2 * h);
+				/* Divide by the array size because libfftw3 produces un-normalized Fourier transforms: doing a Fourier
+				 * transform followed by an inverse Fourier transform produces the original array scaled by its size
+				 */
+		timing_end();
+
+		timing_start("Inverse Fourier transform output");
+		fftw_execute(output_plan);
+		timing_end();
+
+		if(normalize)
+		{
+			double maxE = 0.0;
+			for(int y = 0; y < h; y++)
+				for(int x = 0; x < w; x++)
+					if(cabs(output[y + h][x + w]) > maxE)
+						maxE = cabs(output[y + h][x + w]);
+			if(maxE)
+				for(int y = 0; y < 2 * h; y++)
+					for(int x = 0; x < 2 * w; x++)
+						output[y][x] /= maxE;
+		}
+		
+		timing_start("Convert output");
+		pic = new_picture(w, h);
+		pixels = (uint8_t (*)[w][3])pic.pixels;
+		if(split)
+			for(int y = 0; y < h; y++)
+				for(int x = 0; x < w; x++)
+					if(y < h / 2)
+						complex_to_gray(output[y + h][x + w], pixels[y][x]);
+					else
+						complex_to_rgb(output[y + h][x + w], pixels[y][x]);
+		else if(intensity)
+			for(int y = 0; y < h; y++)
+				for(int x = 0; x < w; x++)
+					complex_to_gray(output[y + h][x + w], pixels[y][x]);
+		else
+			for(int y = 0; y < h; y++)
+				for(int x = 0; x < w; x++)
+					complex_to_rgb(output[y + h][x + w], pixels[y][x]);
+					/* Select a region where convolution produced no wraparound "cross terms" */
+		timing_end();
+		timing_start("Save picture");
+		write_picture(outfile, pic);
+		timing_end();
+		free_picture(pic);
+		
+		free(infile);
+		free(outfile);
+		free(flags);
+	}
+	fftw_destroy_plan(input_plan);
+	fftw_destroy_plan(kernel_plan);
+	fftw_destroy_plan(output_plan);
+
+	free(ainput);
+	free(akernel);
+	free(aoutput);
+	free(ainput_spec);
+	free(akernel_spec);
+	free(aoutput_spec);
+	return 0;
+}
