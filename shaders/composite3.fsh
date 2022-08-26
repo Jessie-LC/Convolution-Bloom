@@ -6,7 +6,7 @@ layout(location = 1) out vec3 kernel_im;
 
 //#define INCLUDE_PHASE //This had virtually no impact on the output, but I have it here for the potential accuracy increase.
 #define BLADES 6 //[3 4 5 6 7 8 9 10]
-#define Z 1.0 //[0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9 1.0 1.1 1.2 1.3 1.4 1.5 1.6 1.7 1.8 1.9 2.0]
+#define Z 1.0 //[0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9 1.0 1.1 1.2 1.3 1.4 1.5 1.6 1.7 1.8 1.9 2.0] This is the distance from the aperture to the sensor plane in CM
 
 uniform sampler2D colortex9;
 uniform sampler2D noisetex;
