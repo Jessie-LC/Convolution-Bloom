@@ -35,8 +35,22 @@ float KarisAverage(vec3 col) {
 }
 
 void main() {
-    vec3 image_lin = SrgbToLinear(texture(colortex0, textureCoordinate).rgb);
+    vec2 coordinate = textureCoordinate;
+    vec3 image_lin = SrgbToLinear(texture(colortex0, coordinate).rgb);
 
-    color_re = image_lin * pow(dot(lumacoeff_rec709, image_lin) * 2.0, 4.0);
+    if(coordinate.x > 1.0) {
+        image_lin = vec3(0.0);
+    }
+    if(coordinate.x < 0.0) {
+        image_lin = vec3(0.0);
+    }
+    if(coordinate.y > 1.0) {
+        image_lin = vec3(0.0);
+    }
+    if(coordinate.y < 0.0) {
+        image_lin = vec3(0.0);
+    }
+
+    color_re = image_lin * pow(dot(lumacoeff_rec709, image_lin) * 2.0, 2.0);
     color_im = vec3(0.0);//image_lin * pow(dot(lumacoeff_rec709, image_lin) * 2.0, 4.0);
 }

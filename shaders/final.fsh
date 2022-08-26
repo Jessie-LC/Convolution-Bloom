@@ -39,7 +39,7 @@ void main() {
 
 	if(gl_FragCoord.x < 512 && gl_FragCoord.y < 512) {
 		vec2 coordinate = ((gl_FragCoord.xy * 2.0)) / SIZE;
-		color = texture(colortex3, 1.0 - coordinate).xyz;
+		color = texture(colortex3, 1.0 - coordinate).xyz / 10.0;
 	}
 
     //color = LinearToSrgb(color);

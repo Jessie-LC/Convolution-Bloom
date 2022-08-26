@@ -15,7 +15,7 @@ uniform float viewWidth, viewHeight;
 
 in vec2 textureCoordinate;
 
-const float scale = 5000.0;
+const float scale = 3000.0;
 
 #include "/lib/universal/universal.glsl"
 
@@ -31,7 +31,7 @@ float Aperture(in vec2 uv) {
 
     float r = 0.0;
     for(int i = 0; i < blades; ++i) {
-        const float angle = tau * (i / float(blades));//(float(i) / blades) * tau;
+        const float angle = tau * (i / float(blades));
 
         mat2 rot = Rotate(blades * angle);
 
