@@ -28,12 +28,6 @@ in vec2 textureCoordinate;
 
 #include "/lib/universal/universal.glsl"
 
-float KarisAverage(vec3 col) {
-    // Formula is 1 / (1 + luma)
-    float luma = dot(LinearToSrgb(col), lumacoeff_rec709) * 0.25;
-    return 1.0 / (1.0 + luma);
-}
-
 void main() {
     vec2 coordinate = textureCoordinate;
     vec3 image_lin = SrgbToLinear(texture(colortex0, coordinate).rgb);
@@ -52,5 +46,5 @@ void main() {
     }
 
     color_re = image_lin * pow(dot(lumacoeff_rec709, image_lin) * 2.0, 2.0);
-    color_im = vec3(0.0);//image_lin * pow(dot(lumacoeff_rec709, image_lin) * 2.0, 4.0);
+    color_im = vec3(0.0);
 }
