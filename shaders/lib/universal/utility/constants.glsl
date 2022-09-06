@@ -11,3 +11,5 @@ const float goldenAngle = tau / (phi + 1.0);
 const vec3 lumacoeff_rec709 = vec3(0.2125, 0.7154, 0.0721);
 
 const int SIZE = 1024;
+
+const int noiseTextureResolution = 256;

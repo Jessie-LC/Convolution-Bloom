@@ -23,7 +23,7 @@ void main() {
 	vec3 glare_re = imageLoad(colorimg3, ivec2(invocationID)).rgb;
 	vec3 glare_im = imageLoad(colorimg4, ivec2(invocationID)).rgb;
 
-	vec3 mul = glare_re;//square(complexAbs(vectorsToComplex(glare_re, glare_im)));
+	vec3 mul = glare_re;
 	if(any(isnan(mul))) {
 		mul = vec3(0.0);
 	}

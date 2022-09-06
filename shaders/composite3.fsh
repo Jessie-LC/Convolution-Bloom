@@ -40,50 +40,14 @@ float Aperture(in vec2 uv) {
         r = max(r, dot(axis, uv));
     }
 
-	return step(1.0, saturate(1.0 - (r - 0.2)));
+    r = mix(r, dot(uv * 2.5, uv * 2.5), 0.0);
+
+	return saturate(step(1.0, saturate(1.0 - (r - 0.2))));
 }
 
 complexFloat h(in vec3 position, in float k, in float lambda) {
     position.z /= 100.0;
-    return complexMul(
-        complexDiv(
-            complexExp(
-                complexMul(
-                    complexFloat(
-                        0.0, 
-                        1.0
-                    ),
-                    k * position.z
-                )
-            ),
-            complexMul(
-                complexFloat(
-                    0.0,
-                    1.0
-                ),
-                lambda * position.z
-            )
-        ),
-        complexExp(
-            complexMul(
-                complexMul(
-                    complexFloat(
-                        0.0, 
-                        1.0
-                    ),
-                    k / (2.0 * position.z)
-                ),
-                square(position.x / scale) + square(position.y / scale)
-            )
-        )
-    );
-}
-
-complexFloat FresnelApproximation(in vec2 position, in float wavelength) {
-    return complexExp(complexMul(
-        complexMul(complexFloat(0.0, 1.0), pi / ((wavelength * 1e-9) * (Z / 100.0))),
-        (square(position.x / 500.0) + square(position.y / 500.0))
-    ));
+    return complexExp(complexMul(complexMul(complexFloat(0.0, 1.0), pi / (lambda * position.z)), square(position.x / scale) + square(position.y / scale)));
 }
 
 void main() {
@@ -91,6 +55,7 @@ void main() {
 	vec3 glare_im = vec3(0.0);
 
 	vec2 position = IndexToDistance(int(gl_FragCoord.x), int(gl_FragCoord.y), SIZE);
+    vec2 uv = gl_FragCoord.st / SIZE;
 
     float opening = Aperture(position);
 
@@ -98,43 +63,9 @@ void main() {
     float wavelengthG = 550e-9;
     float wavelengthB = 440e-9;
 
-    complexFloat phaseR = complexMul(
-        complexExp(
-            complexMul(
-                complexFloat(0.0, 1.0),
-                pi / (wavelengthR * (Z / 100.0))
-            )
-        ),
-        square(position.x / scale) + square(position.y / scale)
-    );
-    complexFloat phaseG = complexMul(
-        complexExp(
-            complexMul(
-                complexFloat(0.0, 1.0),
-                pi / (wavelengthR * (Z / 100.0))
-            )
-        ),
-        square(position.x / scale) + square(position.y / scale)
-    );
-    complexFloat phaseB = complexMul(
-        complexExp(
-            complexMul(
-                complexFloat(0.0, 1.0),
-                pi / (wavelengthR * (Z / 100.0))
-            )
-        ),
-        square(position.x / scale) + square(position.y / scale)
-    );
-
-    #ifdef INCLUDE_PHASE
-    complexFloat E_r = complexMul(phaseR, complexMul(opening, h(vec3(position, Z), 2.0 * pi / wavelengthR, wavelengthR)));
-    complexFloat E_g = complexMul(phaseG, complexMul(opening, h(vec3(position, Z), 2.0 * pi / wavelengthG, wavelengthG)));
-    complexFloat E_b = complexMul(phaseB, complexMul(opening, h(vec3(position, Z), 2.0 * pi / wavelengthB, wavelengthB)));
-    #else
-    complexFloat E_r = complexMul(3e-9, complexMul(opening, h(vec3(position, Z), 2.0 * pi / wavelengthR, wavelengthR)));
-    complexFloat E_g = complexMul(3e-9, complexMul(opening, h(vec3(position, Z), 2.0 * pi / wavelengthG, wavelengthG)));
-    complexFloat E_b = complexMul(3e-9, complexMul(opening, h(vec3(position, Z), 2.0 * pi / wavelengthB, wavelengthB)));
-    #endif
+    complexFloat E_r = complexMul(1.0, complexMul(opening, h(vec3(position, Z), 2.0 * pi / wavelengthR, wavelengthR)));
+    complexFloat E_g = complexMul(1.0, complexMul(opening, h(vec3(position, Z), 2.0 * pi / wavelengthG, wavelengthG)));
+    complexFloat E_b = complexMul(1.0, complexMul(opening, h(vec3(position, Z), 2.0 * pi / wavelengthB, wavelengthB)));
 
     if(isnan(E_r.r)) {
         E_r.r = 0.0;
@@ -176,6 +107,6 @@ void main() {
     glare_re += vec3(E_r.r, E_g.r, E_b.r);
     glare_im += vec3(E_r.i, E_g.i, E_b.i);
 
-    kernel_re = glare_re * 3e-2;
-    kernel_im = glare_im * 3e-2;
+    kernel_re = glare_re;
+    kernel_im = glare_im;
 }

@@ -34,7 +34,11 @@ void main() {
         int index0 = base + offset;
         int index1 = index0 + (SIZE / 2);
 
-        complexVec3 twiddle = complexExp(complexVec3(vec3(0.0), vec3(2.0 * pi * int(invocationID[AXIS]) / i)));
+        #ifdef IFFT
+            complexVec3 twiddle = complexExp(complexVec3(vec3(0.0), vec3(-2.0 * pi * int(invocationID[AXIS]) / i)));
+        #else
+            complexVec3 twiddle = complexExp(complexVec3(vec3(0.0), vec3( 2.0 * pi * int(invocationID[AXIS]) / i)));
+        #endif
 
         complexVec3 fft_z = complexAdd(
             vectorsToComplex(fft_re[index0], fft_im[index0]), 

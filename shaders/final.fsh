@@ -19,6 +19,7 @@ uniform sampler2D colortex1;
 uniform sampler2D colortex2;
 uniform sampler2D colortex3;
 uniform sampler2D colortex4;
+uniform sampler2D colortex9;
 
 uniform float viewWidth, viewHeight;
 
@@ -34,13 +35,12 @@ vec3 TonemapHejlBurgess(in vec3 color) {
 }
 
 void main() {
-    color = texture(colortex0, textureCoordinate).rgb + texture(colortex1, 1.0 - textureCoordinate).xyz;
-    color = TonemapHejlBurgess(color);
+    color = SrgbToLinear(texture(colortex0, textureCoordinate).rgb) + clamp(abs(texture(colortex1, textureCoordinate).xyz), 1e-5, 3.4e38);
+    color = color / (1.0 + color);//TonemapHejlBurgess(color);
+    color = LinearToSrgb(color);
 
 	if(gl_FragCoord.x < 512 && gl_FragCoord.y < 512) {
 		vec2 coordinate = ((gl_FragCoord.xy * 2.0)) / SIZE;
-		color = texture(colortex3, 1.0 - coordinate).xyz / 10.0;
+		color = texture(colortex3, 1.0 - coordinate).xyz * 0.05;
 	}
-
-    //color = LinearToSrgb(color);
 }
