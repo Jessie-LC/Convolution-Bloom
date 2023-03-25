@@ -1,5 +1,7 @@
 #version 450
 
-#define AXIS 1
+const int ImageStage = 0;
+
+#define AXIS 0
 
 #include "fft.glsl"

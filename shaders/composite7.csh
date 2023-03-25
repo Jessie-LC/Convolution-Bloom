@@ -1,7 +1,9 @@
 #version 450
 
-#define AXIS 1
+const int ImageStage = 3;
 
-#define IFFT
+#define AXIS 0
+
+//#define IFFT
 
 #include "fftconvolve.glsl"

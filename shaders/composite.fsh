@@ -21,6 +21,7 @@ layout(location = 0) out vec3 color_re;
 layout(location = 1) out vec3 color_im;
 
 uniform sampler2D colortex0;
+uniform sampler2D noisetex;
 
 uniform float viewWidth, viewHeight;
 
@@ -30,7 +31,7 @@ in vec2 textureCoordinate;
 
 void main() {
     vec2 coordinate = textureCoordinate;
-    vec3 image_lin = SrgbToLinear(texture(colortex0, coordinate).rgb);
+    vec3 image_lin = pow(texture(colortex0, coordinate).rgb, vec3(2.2));
 
     if(coordinate.x > 1.0) {
         image_lin = vec3(0.0);
@@ -45,6 +46,6 @@ void main() {
         image_lin = vec3(0.0);
     }
 
-    color_re = image_lin * pow(dot(lumacoeff_rec709, image_lin) * 2.0, 2.0);
+    color_re = image_lin;// * pow(dot(lumacoeff_rec709, image_lin) * 4.0, 6.0);
     color_im = vec3(0.0);
 }

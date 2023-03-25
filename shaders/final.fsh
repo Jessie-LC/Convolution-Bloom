@@ -27,20 +27,15 @@ in vec2 textureCoordinate;
 
 #include "/lib/universal/universal.glsl"
 
-vec3 TonemapHejlBurgess(in vec3 color) {
-    color = max(vec3(0.0), color - 0.0008);
-    color = (color * (6.2 * color + 0.5)) / (color * (6.2 * color + 1.7) + 0.06);
-
-    return color;
-}
-
 void main() {
-    color = SrgbToLinear(texture(colortex0, textureCoordinate).rgb) + clamp(abs(texture(colortex1, textureCoordinate).xyz), 1e-5, 3.4e38);
-    color = color / (1.0 + color);//TonemapHejlBurgess(color);
+    color = clamp(abs(texture(colortex1, textureCoordinate).xyz) * 0.0001, 1e-5, 3.4e38);
+    color = color / (1.0 + color);
     color = LinearToSrgb(color);
 
 	if(gl_FragCoord.x < 512 && gl_FragCoord.y < 512) {
 		vec2 coordinate = ((gl_FragCoord.xy * 2.0)) / SIZE;
-		color = texture(colortex3, 1.0 - coordinate).xyz * 0.05;
+		color = (texture(colortex3, 1.0 - coordinate).xyz / (1024.0 * 1024.0)) * 10.0;
 	}
+
+    //color = (texture(colortex3, textureCoordinate).rgb / (1024.0 * 1024.0)) * 1000.0;
 }
