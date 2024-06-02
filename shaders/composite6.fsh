@@ -121,55 +121,23 @@ uint RandNext() { return randState = lowbias32(randState); }
 #define RandNext3F() (vec3(RandNext3()) / float(0xffffffffu))
 #define RandNext4F() (vec4(RandNext4()) / float(0xffffffffu))
 
-float Aperture(in vec2 uv) {
-    const int blades = 126;
-
-    float r = 0.0;
-    for(int i = 0; i < blades; ++i) {
-        float angle = 2.0 * pi * (float(i) / float(blades));
-
-        mat2 rot = Rotate(float(blades) * angle + radians(180.0));
-
-		vec2 axis = rot * vec2(cos(angle), sin(angle));
-
-        r = max(r, dot(axis, uv));
-    }
-
-	return float(r < 0.003);//clamp(step(1.0, clamp(1.0 - (r - 0.1), 0.0, 1.0)), 0.0, 1.0);
+float BesselJ(float x) {
+    float xx = x * x, a = 1. + .12138 * xx;
+    return (   sqrt(a) * (46.68634 + 5.82514 * xx) * sin(x) 
+             -    x    * (17.83632 + 2.02948 * xx) * cos(x)
+           ) / ( (57.70003 + 17.49211 * xx) * pow( a, 3./4.) );
 }
 
-float EyeLash(in vec2 uv) {
-    uv.x = uv.x*1.777 - 0.38; //squarify UVs
-    
-    //if(uv.y <0.5)  uv.y = 1.0-uv.y; //mirror UVs vertically
-    
-    vec2 uv1 = uv.xy;
-    
-    //vertical offset
-    if (uv1.y < 0.5) uv1.y = 1.0 - uv1.y;
-    //float y_offset = sin(iTime)*0.05 - 0.1;
-    //uv1.y += y_offset;
-
-    float distance_to_upperlashes_center = distance(vec2(uv1.x, uv1.y * 2.0 + sin(1.0*2.0)*0.5), vec2(0.5, 1.9));
-
-    //if (distance_to_upperlashes_center < 0.4)
-    {
-        vec2 uv2 = uv1.xy;
-        
-        //curve lashes
-        //uv2.x = (uv2.x-0.5) * (1.0 - uv2.y*3.0) +0.5;        
-
-        float angle_around_center = (/*(iTime*0.5) +*/ 1.0 + acos(dot(normalize(uv2.xy - vec2(0.5, 0.5 + 0.5)), vec2(1, 0))));
-
-        //draw lashes
-        if (abs(fract((angle_around_center - 0.03 ) * 8.0 )) < 0.4 - distance_to_upperlashes_center )
-        {
-            return 0.0;
-            //col = vec3(abs(fract((angle_around_center - 0.03 ) * 16.0))*2.0);
-        }
+float AiryDisk(float sinTheta, float k) {
+    float radius = 2500.0;
+    float airy = square((2.0 * BesselJ(k * radius * sinTheta)) / (k * radius * sinTheta));
+    if(isinf(airy)) {
+        airy = 0.0;
     }
-
-    return 1.0;
+    if(isnan(airy)) {
+        airy = 0.0;
+    }
+    return airy;
 }
 
 void main() {
@@ -177,42 +145,24 @@ void main() {
 
     vec3 kernel_image = texture(colortex9, coordinate).rgb * 100.0;//complexAbs(complexVec3(texture(colortex3, coordinate).rgb, texture(colortex4, coordinate).rgb));
 
-    int spectralSamples = 16;
+    int spectralSamples = 128;
 
     const float blur = 1.0;
     const float lambdaStart = 380.0;
     const float lambdaEnd   = 780.0;
-
-    float x = gl_FragCoord.x - 0.5;
-    float y = gl_FragCoord.y - 0.5;
-
+    const float lambdaMid   = (lambdaStart + lambdaEnd) / 2.0;
     float dw = (lambdaEnd - lambdaStart) / spectralSamples;
 
     //*
     vec3 XYZIrradiance = vec3(0.0);
     for (int i = 0; i < spectralSamples; ++i) {
-        float wavelength = lambdaStart + (float(i) + 0.5f)*dw;//(dw * (float(wi) / (spectralSamples - 1))) + lambdaStart;
+        float wavelength = lambdaStart + (float(i) + 0.5f)*dw;
 
-        vec2 rng = RandNext2F();
-
-		float dx = (x + blur * (RandNextF())) / 1024.0;
-		float dy = (y + blur * (RandNextF())) / 1024.0;
-		dx -= 0.5; dy -= 0.5;
-        vec2 dxy = vec2(dx, dy);//IndexToDistance(x + blur * (rng.x), y + blur * (rng.y), 1024.0);
-
-        vec2 sxy = dxy * (vec2(wavelength / 575.0, wavelength / 575.0) * 0.5);
-
-        float r = RandNextF() > 0.5f ? 1.0f : -1.0f;
-        float angle = r;
-
-        vec2 rxy = sxy;
-        sxy.x = rxy.x * cos(angle) + rxy.y * sin(angle);
-        sxy.y = rxy.y * cos(angle) - rxy.x * sin(angle);
-
-        XYZIrradiance.x += Aperture(sxy) * (texture(noisetex, (sxy + 0.5)).r * 0.8 + 0.2) * xFit_1931(wavelength) * dw;
-        XYZIrradiance.y += Aperture(sxy) * (texture(noisetex, (sxy + 0.5)).r * 0.8 + 0.2) * yFit_1931(wavelength) * dw;
-        XYZIrradiance.z += Aperture(sxy) * (texture(noisetex, (sxy + 0.5)).r * 0.8 + 0.2) * zFit_1931(wavelength) * dw;
+        XYZIrradiance.x += AiryDisk(sin(length(textureCoordinate - 0.5)), 2.0 * pi / (wavelength * 1e-3)) * xFit_1931(wavelength) * dw;
+        XYZIrradiance.y += AiryDisk(sin(length(textureCoordinate - 0.5)), 2.0 * pi / (wavelength * 1e-3)) * yFit_1931(wavelength) * dw;
+        XYZIrradiance.z += AiryDisk(sin(length(textureCoordinate - 0.5)), 2.0 * pi / (wavelength * 1e-3)) * zFit_1931(wavelength) * dw;
     }
+
 
     kernel_re = clamp(XYZtosRGB(XYZIrradiance) * 1.0, 3.4e-38, 3.4e38);
     kernel_im = vec3(0.0);

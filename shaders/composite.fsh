@@ -46,6 +46,6 @@ void main() {
         image_lin = vec3(0.0);
     }
 
-    color_re = image_lin;// * pow(dot(lumacoeff_rec709, image_lin) * 4.0, 6.0);
+    color_re = image_lin * pow(dot(lumacoeff_rec709, image_lin) * 10.0, 4.0);
     color_im = vec3(0.0);
 }
